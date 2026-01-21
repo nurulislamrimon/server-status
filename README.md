@@ -1,5 +1,7 @@
 # Server Status – Grafana-style Terminal Dashboard
 
+![Server Status Dashboard](Server_status.gif)
+
 A beautiful, flicker-free, real-time terminal dashboard inspired by **Grafana Dark Theme**.  
 Designed for servers — fast, clean, and professional.
 
@@ -70,12 +72,12 @@ server-status [OPTIONS]
 
 ### Options
 
-| Option | Description |
-|------|-------------|
-| `--help` | Show help |
-| `--interface <name>` | Override network interface |
-| `--refresh <seconds>` | Refresh interval |
-| `--services "svc1,svc2"` | Custom services list |
+| Option                   | Description                |
+| ------------------------ | -------------------------- |
+| `--help`                 | Show help                  |
+| `--interface <name>`     | Override network interface |
+| `--refresh <seconds>`    | Refresh interval           |
+| `--services "svc1,svc2"` | Custom services list       |
 
 ---
 

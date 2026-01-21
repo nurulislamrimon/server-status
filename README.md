@@ -64,6 +64,10 @@ server-status
 
 ---
 
+## Visual
+
+![Server Status Dashboard](Server_status_instruction.gif)
+
 ## 📖 Usage
 
 ```bash

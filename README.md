@@ -22,7 +22,7 @@ Monitors:
 
 ---
 
-## ✅ Requirements
+## Requirements
 
 - Linux (Ubuntu / Debian / CentOS / RHEL / Fedora)
 - Bash **4+**
@@ -39,7 +39,7 @@ Monitors:
 
 ---
 
-## 🚀 Installation (Using curl — No git)
+## Installation (Using curl — No git)
 
 ### Download
 
@@ -72,7 +72,7 @@ server-status
 
 ![Server Status Dashboard](Server_status_instruction.gif)
 
-## 📖 Usage
+## Usage
 
 ```bash
 server-status [OPTIONS]
@@ -89,7 +89,7 @@ server-status [OPTIONS]
 
 ---
 
-## 🖥 Example Output
+## Example Output
 
 ```
 CPU: 68.4% | Processes: 285 | Active: 12
@@ -99,7 +99,7 @@ Services: nginx mysql docker
 
 ---
 
-## 🎨 Customization
+## Customization
 
 Edit variables at the top of the script to change:
 
@@ -111,13 +111,13 @@ Edit variables at the top of the script to change:
 
 ---
 
-## 📜 License
+## License
 
 MIT License
 
 ---
 
-## 👤 Author
+## Author
 
 Nurul Islam Rimon  
 https://github.com/nurulislamrimon

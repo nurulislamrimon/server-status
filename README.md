@@ -1,9 +1,13 @@
+![License](https://img.shields.io/github/license/nurulislamrimon/server-status)
+![Stars](https://img.shields.io/github/stars/nurulislamrimon/server-status)
+![Shell](https://img.shields.io/badge/bash-4%2B-blue)
+
 # Server Status – Grafana-style Terminal Dashboard
 
 ![Server Status Dashboard](Server_status.gif)
 
 A beautiful, flicker-free, real-time terminal dashboard inspired by **Grafana Dark Theme**.  
-Designed for servers — fast, clean, and professional.
+Designed for production servers — fast, clean, and professional.
 
 Monitors:
 

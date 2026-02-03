@@ -2,24 +2,24 @@
 # =============================================================================
 # Server Status – Grafana-style Terminal Dashboard
 # Author: Nurul Islam Rimon (nurulislamrimon)
-# GitHub: https://github.com/nurulislamrimon/server-status
-# Version: 1.0.6
+# Version: 1.0.7 (CPU FIX)
 # License: MIT
 # =============================================================================
 
-# Default settings
 REFRESH=1.5
 NET_DEV=""
 SERVICES=("nginx" "apache2" "mysql" "redis" "docker" "pm2" "cron" "ssh" "ufw" "fail2ban")
 
+# ───── CPU GLOBALS (FIX) ─────
+prev_idle=0
+prev_total=0
+
 show_help() {
     echo "Usage: server-status [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo " --help                Show this help message"
-    echo " --interface <name>    Override network interface"
-    echo " --refresh <seconds>   Refresh interval (default: 1.5)"
-    echo " --services \"svc1,svc2,...\"  Custom services"
+    echo " --help"
+    echo " --interface <name>"
+    echo " --refresh <seconds>"
+    echo " --services \"svc1,svc2\""
     exit 0
 }
 
@@ -33,23 +33,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$NET_DEV" ]]; then
-    NET_DEV=$(ip -4 route show default | awk '{print $5}' | head -1)
-    [[ -z "$NET_DEV" ]] && NET_DEV="eth0"
-fi
+[[ -z "$NET_DEV" ]] && NET_DEV=$(ip route show default | awk '{print $5}' | head -1)
+[[ -z "$NET_DEV" ]] && NET_DEV="eth0"
 
-trap 'echo -e "\e[?25h\e[0m\e[?1049l"; tput cnorm 2>/dev/null; clear; exit' INT TERM EXIT
+trap 'echo -e "\e[?25h\e[0m\e[?1049l"; tput cnorm; clear; exit' INT TERM EXIT
 echo -e "\e[?25l\e[?1049h"
 
-RESET="\e[0m"
-BOLD="\e[1m"
-GRAY="\e[90m"
-WHITE="\e[97m"
-GREEN="\e[32m"
-YELLOW="\e[33m"
-RED="\e[31m"
-CYAN="\e[36m"
-BLUE="\e[34m"
+RESET="\e[0m"; BOLD="\e[1m"; GRAY="\e[90m"
+WHITE="\e[97m"; GREEN="\e[32m"; YELLOW="\e[33m"
+RED="\e[31m"; CYAN="\e[36m"; BLUE="\e[34m"
 DOT="●"
 
 LEFT_COL=2
@@ -61,182 +53,107 @@ prev_tx=0
 
 draw_static_box() {
     local r=$1 c=$2 w=$3 h=$4 title="$5"
-    local i
     echo -ne "\e[${r};${c}H${GRAY}┌$(printf '─%.0s' $(seq 1 $((w-2))))┐${RESET}"
     ((r++))
     echo -ne "\e[${r};${c}H${GRAY}│${RESET} ${BOLD}${WHITE}${title}${RESET}"
-    local len=${#title}
-    printf ' %.0s' $(seq 1 $((w - len - 3)))
+    printf ' %.0s' $(seq 1 $((w-${#title}-3)))
     echo -ne "${GRAY}│${RESET}"
     ((r++))
     echo -ne "\e[${r};${c}H${GRAY}├$(printf '─%.0s' $(seq 1 $((w-2))))┤${RESET}"
-    for ((i=1; i<=h-4; i++)); do
+    for ((i=1;i<=h-4;i++)); do
         ((r++))
-        echo -ne "\e[${r};${c}H${GRAY}│${RESET}"
-        printf ' %.0s' $(seq 1 $((w-2)))
-        echo -ne "${GRAY}│${RESET}"
+        echo -ne "\e[${r};${c}H${GRAY}│${RESET}$(printf ' %.0s' $(seq 1 $((w-2))))${GRAY}│${RESET}"
     done
     ((r++))
     echo -ne "\e[${r};${c}H${GRAY}└$(printf '─%.0s' $(seq 1 $((w-2))))┘${RESET}"
 }
 
 update_line() {
-    local row=$1 col=$2 text="$3" color="${4:-$WHITE}"
-    echo -ne "\e[${row};${col}H${color}${text}${RESET}\e[K"
+    echo -ne "\e[$1;$2H$3$RESET\e[K"
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# PANEL POSITIONS - FIXED LAYOUT
-# ──────────────────────────────────────────────────────────────────────────────
-draw_cpu_panel_static()     { draw_static_box  2 $LEFT_COL  $PANEL_WIDTH 18 "CPU";      }
-draw_memory_panel_static()  { draw_static_box 20 $LEFT_COL  $PANEL_WIDTH 10 "MEMORY";  }
-draw_disk_panel_static()    { draw_static_box 30 $LEFT_COL  $PANEL_WIDTH 10 "DISK";    }
-draw_network_panel_static() { draw_static_box  2 $RIGHT_COL $PANEL_WIDTH  9 "NETWORK (${NET_DEV})"; }
-draw_services_panel_static(){ draw_static_box 11 $RIGHT_COL $PANEL_WIDTH 19 "SERVICES"; }
-
-# ──────────────────────────────────────────────────────────────────────────────
-# UPDATE FUNCTIONS
-# ──────────────────────────────────────────────────────────────────────────────
+# ───────────────── CPU PANEL (FIXED) ─────────────────
 update_cpu_panel() {
-    local top=$(top -bn1 | head -17)
-    
-    local usage=$(echo "$top" | grep -oP '%Cpu\(s\).*id,\s*\K[0-9.]+' | awk '{print 100-$1}' || echo "0")
-    usage=${usage:-0}
-    
+
+    # Kernel-trusted CPU usage (delta based)
+    read cpu user nice system idle iowait irq softirq steal _ < /proc/stat
+
+    local idle_now=$((idle + iowait))
+    local total_now=$((user + nice + system + idle + iowait + irq + softirq + steal))
+
+    local diff_idle=$((idle_now - prev_idle))
+    local diff_total=$((total_now - prev_total))
+
+    local usage=0
+    (( diff_total > 0 )) && usage=$(awk "BEGIN {printf \"%.1f\", 100*(1-$diff_idle/$diff_total)}")
+
+    prev_idle=$idle_now
+    prev_total=$total_now
+
+    local usage_int=$(awk "BEGIN {print int($usage * 10)}")
+
+    local usage_color=$GREEN
+    (( usage_int >= 900 )) && usage_color=$RED
+    (( usage_int >= 700 && usage_int < 900 )) && usage_color=$YELLOW
+
     local total_procs=$(ps -e --no-headers | wc -l)
-    local active_procs=$(echo "$top" | awk 'NR>7 && $9>0 {count++} END {print count+0}')
-    
-    local load=$(uptime | awk -F'load average: ' '{print $2}' | cut -d, -f1-3 | xargs || echo "N/A")
-    
+    local active_procs=$(ps -eo pcpu | awk '$1>0{c++} END{print c+0}')
+    local load=$(cut -d' ' -f1-3 /proc/loadavg)
+
     local temp=$(cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null | sort -nr | head -1)
     [[ -n "$temp" ]] && temp=$((temp/1000)) || temp="N/A"
-    
-    local usage_int=$(awk "BEGIN {print int($usage * 10)}")
-    
-    local usage_color="$WHITE"
-    if (( usage_int >= 900 )); then usage_color="$RED"
-    elif (( usage_int >= 700 )); then usage_color="$YELLOW"
-    else usage_color="$GREEN"; fi
-    
-    local procs_color="$WHITE"
-    if (( total_procs >= 600 )); then procs_color="$RED"
-    elif (( total_procs >= 400 )); then procs_color="$YELLOW"
-    else procs_color="$GREEN"; fi
-    
-    update_line 5 $((LEFT_COL+2)) "Total Usage     : ${usage_color}${usage}%${RESET} "
-    update_line 6 $((LEFT_COL+2)) "Total Processes : ${procs_color}${total_procs}${RESET} "
-    update_line 7 $((LEFT_COL+2)) "Active Processes: ${active_procs} "
-    update_line 8 $((LEFT_COL+2)) "Load Average    : ${load} "
-    update_line 9 $((LEFT_COL+2)) "Temperature     : ${temp}°C "
-    
-    local cores=$(echo "$top" | tail -n +3 | head -4 | awk '{printf "%s%% ", 100-$NF}' || echo "N/A")
-    update_line 11 $((LEFT_COL+2)) "Per Core        : ${cores} "
-    
-    local top_consumers=$(echo "$top" | awk 'NR>7 && $9>0 {print $1 " " $9 "% " substr($12,1,20)}' | head -3 || echo "None")
-    update_line 13 $((LEFT_COL+2)) "Top Consumers:"
-    local row=14
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && update_line $row $((LEFT_COL+2)) "  ${line}"
-        ((row++))
-    done <<< "$top_consumers"
+
+    update_line 5  $((LEFT_COL+2)) "Total Usage     : ${usage_color}${usage}%"
+    update_line 6  $((LEFT_COL+2)) "Total Processes : ${total_procs}"
+    update_line 7  $((LEFT_COL+2)) "Active Processes: ${active_procs}"
+    update_line 8  $((LEFT_COL+2)) "Load Average    : ${load}"
+    update_line 9  $((LEFT_COL+2)) "Temperature     : ${temp}°C"
 }
 
+# ───────── MEMORY ─────────
 update_memory_panel() {
-    local m=($(free -m | awk '/Mem:/ {print $2,$3,$4,$6,$7} /Swap:/ {print $3,$2}' || echo "0 0 0 0 0 0 0"))
-    local total_mem=${m[0]} used_mem=${m[1]} free_mem=${m[2]} cached=${m[3]} avail=${m[4]}
-    local swap_used=${m[5]} swap_total=${m[6]}
-    
-    local mem_pct=0
-    [[ $total_mem -gt 0 ]] && mem_pct=$(awk "BEGIN {print int(100 * $used_mem / $total_mem)}")
-    
-    local swap_pct=0
-    [[ $swap_total -gt 0 ]] && swap_pct=$(awk "BEGIN {print int(100 * $swap_used / $swap_total)}")
-    
-    local mem_color="$WHITE"
-    if (( mem_pct >= 90 )); then mem_color="$RED"
-    elif (( mem_pct >= 75 )); then mem_color="$YELLOW"
-    else mem_color="$GREEN"; fi
-    
-    update_line 22 $((LEFT_COL+2)) "Total Usage  : ${mem_color}${mem_pct}%${RESET} (${used_mem}/${total_mem} MB) "
-    update_line 23 $((LEFT_COL+2)) "Available    : ${avail} MB "
-    update_line 24 $((LEFT_COL+2)) "Cached       : ${cached} MB "
-    update_line 25 $((LEFT_COL+2)) "Swap Used    : ${swap_pct}% (${swap_used}/${swap_total} MB) "
+    read total used free shared buff avail < <(free -m | awk '/Mem:/ {print $2,$3,$4,$5,$6,$7}')
+    local pct=$((100*used/total))
+    local color=$GREEN
+    (( pct >= 90 )) && color=$RED
+    (( pct >= 75 && pct < 90 )) && color=$YELLOW
+
+    update_line 22 $((LEFT_COL+2)) "Total Usage  : ${color}${pct}% (${used}/${total} MB)"
+    update_line 23 $((LEFT_COL+2)) "Available    : ${avail} MB"
 }
 
+# ───────── DISK ─────────
 update_disk_panel() {
-    local df_out=$(df -h / | tail -1)
-    local root_used_pct=$(echo "$df_out" | awk '{print $5}' | tr -d '%' || echo "0")
-    local root_total=$(echo "$df_out" | awk '{print $2}')
-    local root_used=$(echo "$df_out" | awk '{print $3}')
-    
-    local iowait=$(top -bn1 | grep -oP '%Cpu.*wa,\s*\K[0-9.]+' || echo "N/A")
-    local rd wr="N/A"
-    if command -v iostat >/dev/null 2>&1; then
-        read rd wr <<< $(iostat -d -k 1 2 | tail -1 | awk '{print $3,$4}' || echo "N/A N/A")
-    fi
-    
-    local disk_color="$WHITE"
-    if [[ "$root_used_pct" =~ ^[0-9]+$ ]]; then
-        if (( root_used_pct >= 90 )); then disk_color="$RED"
-        elif (( root_used_pct >= 80 )); then disk_color="$YELLOW"
-        else disk_color="$GREEN"; fi
-    fi
-    
-    update_line 32 $((LEFT_COL+2)) "Total Usage  : ${disk_color}${root_used_pct}%${RESET} (${root_used}/${root_total}) "
-    update_line 33 $((LEFT_COL+2)) "IO Wait      : ${iowait}% "
-    update_line 34 $((LEFT_COL+2)) "Read Speed   : ${rd} KB/s "
-    update_line 35 $((LEFT_COL+2)) "Write Speed  : ${wr} KB/s "
+    read size used avail pct <<< $(df -h / | awk 'NR==2{print $2,$3,$4,$5}')
+    update_line 32 $((LEFT_COL+2)) "Total Usage  : ${pct} (${used}/${size})"
 }
 
+# ───────── NETWORK ─────────
 update_network_panel() {
-    local stats=($(grep -w "${NET_DEV}:" /proc/net/dev | awk '{print $2,$10}' || echo "0 0"))
-    local rx=${stats[0]:-0} tx=${stats[1]:-0}
-    local rx_speed=$(((rx - prev_rx) / 1024))
-    local tx_speed=$(((tx - prev_tx) / 1024))
-    prev_rx=$rx
-    prev_tx=$tx
-    
-    local conns="N/A"
-    if command -v ss >/dev/null 2>&1; then
-        conns=$(ss -s | grep -oP 'TCP:\s*\K\d+(?=\s*\()' || echo "N/A")
-    fi
-    
-    update_line 5 $((RIGHT_COL+2)) "RX : ${rx_speed} KB/s "
-    update_line 6 $((RIGHT_COL+2)) "TX : ${tx_speed} KB/s "
-    update_line 7 $((RIGHT_COL+2)) "Connections : ${conns} "
+    read rx tx <<< $(awk -v d="$NET_DEV" '$1~d":"{print $2,$10}' /proc/net/dev)
+    update_line 5 $((RIGHT_COL+2)) "RX : $(((rx-prev_rx)/1024)) KB/s"
+    update_line 6 $((RIGHT_COL+2)) "TX : $(((tx-prev_tx)/1024)) KB/s"
+    prev_rx=$rx; prev_tx=$tx
 }
 
+# ───────── SERVICES ─────────
 update_services_panel() {
     local row=13
     for svc in "${SERVICES[@]}"; do
-        local state="unknown"
-        if systemctl is-active --quiet "$svc" 2>/dev/null; then state="active"
-        elif systemctl is-failed --quiet "$svc" 2>/dev/null; then state="failed"
-        elif systemctl is-active --quiet "$svc" >/dev/null 2>&1; then state="activating"
-        fi
-        
-        local color=$GRAY dot="○"
-        case $state in
-            active) color=$GREEN; dot="$DOT" ;;
-            activating) color=$YELLOW; dot="$DOT" ;;
-            failed) color=$RED; dot="$DOT" ;;
-        esac
-        
-        update_line $row $((RIGHT_COL+2)) "${svc^}: "
-        update_line $row $((RIGHT_COL+2 + 12)) "${color}${dot} ${state^}${RESET} "
+        systemctl is-active --quiet "$svc" && state="active" || state="inactive"
+        color=$([[ $state == active ]] && echo "$GREEN" || echo "$GRAY")
+        update_line $row $((RIGHT_COL+2)) "${svc^}: ${color}${state}"
         ((row++))
     done
 }
 
-# ──────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ──────────────────────────────────────────────────────────────────────────────
+# ───────── UI ─────────
 clear
-draw_cpu_panel_static
-draw_memory_panel_static
-draw_disk_panel_static
-draw_network_panel_static
-draw_services_panel_static
+draw_static_box 2  $LEFT_COL  $PANEL_WIDTH 18 "CPU"
+draw_static_box 20 $LEFT_COL  $PANEL_WIDTH 10 "MEMORY"
+draw_static_box 30 $LEFT_COL  $PANEL_WIDTH 10 "DISK"
+draw_static_box 2  $RIGHT_COL $PANEL_WIDTH 9  "NETWORK ($NET_DEV)"
+draw_static_box 11 $RIGHT_COL $PANEL_WIDTH 19 "SERVICES"
 
 while true; do
     update_cpu_panel
